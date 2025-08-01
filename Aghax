@@ -1,0 +1,139 @@
+lib/
+main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+void main() => runApp(AaghaXApp());
+
+class AaghaXApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'AAGHA X',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: Colors.black,
+        primaryColor: Colors.amber,
+        textTheme: TextTheme(
+          bodyText2: TextStyle(color: Colors.amber, fontSize: 16),
+        ),
+      ),
+      home: PredictionScreen(),
+    );
+  }
+}
+
+class PredictionScreen extends StatefulWidget {
+  @override
+  _PredictionScreenState createState() => _PredictionScreenState();
+}
+
+class _PredictionScreenState extends State<PredictionScreen> {
+  final FlutterTts flutterTts = FlutterTts();
+  final TextEditingController _controller = TextEditingController();
+  List<String> inputs = [];
+  String prediction = '';
+  String risk = '';
+
+  Future<void> analyze() async {
+    if (inputs.length < 3) return;
+    final response = await getAIPrediction(inputs);
+    setState(() {
+      prediction = response['prediction'];
+      risk = response['risk'];
+    });
+    speak("Agha, $prediction ka time hai. Risk level: $risk");
+  }
+
+  Future<void> speak(String text) async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setPitch(1);
+    await flutterTts.speak(text);
+  }
+
+  Future<Map<String, String>> getAIPrediction(List<String> history) async {
+    final prompt = "Casino results history: ${history.join(", ")}. What is the next best move and risk level?";
+
+    final response = await http.post(
+      Uri.parse('https://api.openai.com/v1/chat/completions'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'https://api.openai.com/v1/chat/completions',
+      },
+      body: json.encode({
+        'model': 'gpt-3.5-turbo',
+        'messages': [
+          {'role': 'user', 'content': prompt},
+        ],
+        'temperature': 0.7,
+      }),
+    );
+
+    final data = json.decode(response.body);
+    final aiResponse = data['choices'][0]['message']['content'];
+
+    // Simple parsing (you can make this better)
+    final lines = aiResponse.split("\n");
+    String pred = lines.firstWhere((l) => l.toLowerCase().contains("prediction"), orElse: () => "Prediction: Unknown");
+    String riskLevel = lines.firstWhere((l) => l.toLowerCase().contains("risk"), orElse: () => "Risk: Unknown");
+
+    return {
+      'prediction': pred.replaceAll("Prediction:", '').trim(),
+      'risk': riskLevel.replaceAll("Risk:", '').trim(),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('AAGHA X Prediction AI')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Text('Enter Last Game Results (Red/Black or 0/1):'),
+            TextField(
+              controller: _controller,
+              decoration: InputDecoration(hintText: 'e.g., Red'),
+              onSubmitted: (value) {
+                if (value.trim().isNotEmpty) {
+                  inputs.add(value.trim());
+                  _controller.clear();
+                  if (inputs.length > 10) inputs.removeAt(0);
+                  setState(() {});
+                }
+              },
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: analyze,
+              child: Text('Analyze'),
+            ),
+            SizedBox(height: 20),
+            Text('Prediction: $prediction', style: TextStyle(fontSize: 20)),
+            Text('Risk Level: $risk', style: TextStyle(fontSize: 18)),
+            SizedBox(height: 20),
+            Text('Inputs: ${inputs.join(", ")}'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+pubspec.yaml
+name: aagha_x
+description: AAGHA X Casino Predictor App
+version: 1.0.0+1
+
+environment:
+  sdk: ">=2.18.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_tts: ^3.6.3
+  http: ^0.13.6
+
+flutter:
+  uses-material-design: true
